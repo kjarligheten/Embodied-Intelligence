@@ -507,17 +507,64 @@ class StudentPolicy:
         )
 
     def _handle_close(self, observation: Observation) -> PolicyDecision:
-        """Close gripper to grasp object."""
+        """Close gripper to grasp object with position monitoring."""
         self.steps_in_stage += 1
+
+        # Track initial gripper opening to detect if it's closing
+        if self.steps_in_stage == 1:
+            self._initial_gripper_opening = observation.gripper_opening
+            self._initial_ee_position = observation.ee_position.copy()
 
         # Use object-specific closing time
         if self.steps_in_stage < self.gripper_close_steps:
             # Hold position while closing to prevent drift
+            # Check for position drift - if significant, reposition
+            position_drift = np.linalg.norm(observation.ee_position - self._initial_ee_position)
+            if position_drift > 0.02:  # 2cm drift threshold
+                # Reposition to initial location
+                ik_result = self.ik.solve(
+                    observation.joint_position,
+                    self._initial_ee_position,
+                    np.array([1.0, 0.0, 0.0, 0.0]),
+                    max_iterations=100,
+                )
+                if ik_result.converged:
+                    return PolicyDecision(
+                        command=JointPositionCommand(ik_result.joint_position, 0.0),
+                        stage="CLOSE",
+                        rationale="Repositioning due to drift during close.",
+                        target_id=self.target_id,
+                    )
+            
             return PolicyDecision(
                 command=JointPositionCommand(observation.joint_position, 0.0),
                 stage="CLOSE",
                 rationale="Closing gripper while holding position.",
                 target_id=self.target_id,
+            )
+
+        # Check if gripper is closing (opening should be decreasing)
+        if observation.gripper_opening >= self._initial_gripper_opening - 0.01:
+            # Gripper not closing - might be blocked or at limit
+            self.retry_count += 1
+            if self.retry_count >= self.max_retries:
+                return PolicyDecision(
+                    command=JointPositionCommand(HOME_Q, 1.0),
+                    stage="timeout",
+                    rationale="Gripper failed to close after retries.",
+                    target_id=self.target_id,
+                    done=True,
+                )
+            # Try to reposition and retry
+            self.stage = "DESCEND"
+            self.steps_in_stage = 0
+            return PolicyDecision(
+                command=JointPositionCommand(observation.joint_position, 1.0),
+                stage="DESCEND",
+                rationale="Gripper not closing, repositioning.",
+                target_id=self.target_id,
+                request_retry=True,
+                done=False,
             )
 
         # Check if gripper is closed
@@ -529,6 +576,31 @@ class StudentPolicy:
                 stage="LIFT",
                 rationale="Gripper closed, lifting object.",
                 target_id=self.target_id,
+            )
+
+        # If not closed after max steps, try to continue or retry
+        if self.steps_in_stage > self.max_steps_per_stage:
+            self.retry_count += 1
+            if self.retry_count >= self.max_retries:
+                # Assume closed enough and proceed
+                self.stage = "LIFT"
+                self.steps_in_stage = 0
+                return PolicyDecision(
+                    command=JointPositionCommand(observation.joint_position, 0.0),
+                    stage="LIFT",
+                    rationale="Gripper close timeout, proceeding with lift.",
+                    target_id=self.target_id,
+                )
+            # Retry from descend
+            self.stage = "DESCEND"
+            self.steps_in_stage = 0
+            return PolicyDecision(
+                command=JointPositionCommand(observation.joint_position, 1.0),
+                stage="DESCEND",
+                rationale="Gripper close timeout, retrying.",
+                target_id=self.target_id,
+                request_retry=True,
+                done=False,
             )
 
         return PolicyDecision(

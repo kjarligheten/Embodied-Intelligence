@@ -254,9 +254,9 @@ async def _run_depth_based_inference(image, depth, prompts, height, width):
 
 
 async def _run_mock_inference(image, depth, prompts, height, width):
-    """Run mock segmentation inference (fallback).
+    """Run mock segmentation inference with improved depth-based detection.
     
-    Returns masks with approximate positions based on prompt keywords.
+    Uses depth data to detect objects with more accurate position estimation.
     """
     results = []
     
@@ -267,50 +267,71 @@ async def _run_mock_inference(image, depth, prompts, height, width):
         except:
             depth = None
     
-    # Use depth data to detect actual object positions
-    # Find objects by thresholding depth and finding connected components
+    # Use improved depth-based object detection
     if depth is not None and isinstance(depth, np.ndarray):
-        depth_normalized = (depth - depth.min()) / (depth.max() - depth.min() + 1e-6)
+        # Convert to float for processing
+        depth_float = depth.astype(np.float32)
         
-        # Threshold to find tabletop objects
-        table_depth_threshold = 0.5
-        object_mask = depth_normalized > table_depth_threshold
+        # Remove invalid depth values (0 or very large)
+        valid_mask = (depth_float > 0.1) & (depth_float < 2.0)
+        depth_float[~valid_mask] = 0
         
-        # Find connected components
+        # Use adaptive thresholding based on depth distribution
+        depth_values = depth_float[valid_mask]
+        if len(depth_values) > 0:
+            # Find table surface (most common depth value)
+            hist, bins = np.histogram(depth_values, bins=50)
+            table_depth = bins[np.argmax(hist)]
+            
+            # Objects are above table (closer to camera)
+            # Threshold: objects within 10cm above table
+            object_mask = (depth_float > table_depth - 0.1) & (depth_float < table_depth + 0.05) & valid_mask
+        else:
+            object_mask = np.zeros_like(depth_float, dtype=bool)
+        
+        # Find connected components with better filtering
         try:
             from scipy import ndimage
             labeled, num_objects = ndimage.label(object_mask)
             
-            # Get centroids of each object
             object_positions = []
             for i in range(1, num_objects + 1):
                 component_mask = (labeled == i)
-                if component_mask.sum() > 50:  # Minimum size threshold
+                pixel_count = component_mask.sum()
+                
+                # Size filter: objects should be between 100 and 5000 pixels
+                if 100 < pixel_count < 5000:
                     y_coords, x_coords = np.where(component_mask)
-                    center_y = int(y_coords.mean())
-                    center_x = int(x_coords.mean())
-                    object_positions.append((center_x, center_y))
+                    
+                    # Use median for robustness against outliers
+                    center_y = int(np.median(y_coords))
+                    center_x = int(np.median(x_coords))
+                    
+                    # Calculate depth at center
+                    center_depth = depth_float[center_y, center_x]
+                    
+                    object_positions.append((center_x, center_y, center_depth))
         except ImportError:
-            # Fallback to grid positions if scipy not available
+            # Fallback to grid positions with depth
             object_positions = [
-                (int(width * 0.3), int(height * 0.3)),
-                (int(width * 0.5), int(height * 0.5)),
-                (int(width * 0.7), int(height * 0.7)),
+                (int(width * 0.3), int(height * 0.3), 0.5),
+                (int(width * 0.5), int(height * 0.5), 0.5),
+                (int(width * 0.7), int(height * 0.7), 0.5),
             ]
         
         # If no objects detected, use grid positions
         if not object_positions:
             object_positions = [
-                (int(width * 0.3), int(height * 0.3)),
-                (int(width * 0.5), int(height * 0.5)),
-                (int(width * 0.7), int(height * 0.7)),
+                (int(width * 0.3), int(height * 0.3), 0.5),
+                (int(width * 0.5), int(height * 0.5), 0.5),
+                (int(width * 0.7), int(height * 0.7), 0.5),
             ]
     else:
         # Fallback to grid positions if no depth data
         object_positions = [
-            (int(width * 0.3), int(height * 0.3)),
-            (int(width * 0.5), int(height * 0.5)),
-            (int(width * 0.7), int(height * 0.7)),
+            (int(width * 0.3), int(height * 0.3), 0.5),
+            (int(width * 0.5), int(height * 0.5), 0.5),
+            (int(width * 0.7), int(height * 0.7), 0.5),
         ]
     
     mask_size = min(width, height) // 8
@@ -318,11 +339,12 @@ async def _run_mock_inference(image, depth, prompts, height, width):
     for i, prompt in enumerate(prompts):
         # Assign each prompt to a different detected object position
         if i < len(object_positions):
-            center_x, center_y = object_positions[i]
+            center_x, center_y, center_depth = object_positions[i]
         else:
             # Fallback to grid if not enough objects
             center_x = int(width * (0.3 + 0.2 * (i % 3)))
             center_y = int(height * (0.3 + 0.2 * (i // 3)))
+            center_depth = 0.5
         
         # Create elliptical mask
         y, x = np.ogrid[:height, :width]
