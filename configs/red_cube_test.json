@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "episodes": [
+    {"episode_id": "red_cube_test", "instruction": "pick up the red cube", "target": "red_cube", "seed": 0}
+  ]
+}

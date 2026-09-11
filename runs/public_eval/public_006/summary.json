@@ -1,0 +1,60 @@
+{
+  "episode_id": "public_006",
+  "split": "public",
+  "seed": 5,
+  "instruction": "Grasp the blue box.",
+  "expected_target": "blue_box",
+  "selected_target": null,
+  "target_selection_correct": false,
+  "task_plan_matches_hidden_goal": null,
+  "success": false,
+  "terminal_reason": "policy_done",
+  "control_steps": 31,
+  "control_budget": 800,
+  "sim_time_s": 1.480000000000001,
+  "wall_time_s": 7.456457199999932,
+  "execution_mode": "async",
+  "realtime": true,
+  "async_control": {
+    "submitted": 3,
+    "accepted": 3,
+    "stale_dropped": 0,
+    "model_errors": 0,
+    "safe_hold_steps": 12,
+    "reused_command_steps": 16,
+    "last_latency_s": 2.1918064999999842
+  },
+  "last_stage": "model_error",
+  "verification_observed": false,
+  "retry_count": 18,
+  "unsafe_contact_count": 0,
+  "object_xy_displacement_m": {
+    "red_cube": 1.9956625593013595e-14,
+    "green_cylinder": 8.538046568899697e-08,
+    "blue_box": 2.680931436441126e-14
+  },
+  "max_non_target_xy_displacement_m": 8.538046568899697e-08,
+  "object_catalog": [
+    "red_cube",
+    "green_cylinder",
+    "blue_box",
+    "banana",
+    "apple",
+    "orange",
+    "mustard_bottle",
+    "potted_meat_can",
+    "scissors",
+    "marker"
+  ],
+  "task_kind": "lift",
+  "hidden_goals": [
+    {
+      "target": "blue_box",
+      "destination": null
+    }
+  ],
+  "goal_status": {
+    "blue_box": false
+  },
+  "completed_goal_count": 0
+}
