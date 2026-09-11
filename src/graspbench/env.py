@@ -33,6 +33,8 @@ class StepInfo:
         unsafe_contacts: Number of unsafe contacts (robot with static environment)
         contacts: All contact pairs (geom1_name, geom2_name) in this step
     """
+    unsafe_contacts: int
+    contacts: tuple[tuple[str, str], ...]
 
 
 class GraspEnv:

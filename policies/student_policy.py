@@ -546,25 +546,22 @@ class StudentPolicy:
         # Check if gripper is closing (opening should be decreasing)
         if observation.gripper_opening >= self._initial_gripper_opening - 0.01:
             # Gripper not closing - might be blocked or at limit
-            self.retry_count += 1
-            if self.retry_count >= self.max_retries:
+            # After waiting, assume it's closed enough and proceed
+            if self.steps_in_stage > self.gripper_close_steps + 5:
+                self.stage = "LIFT"
+                self.steps_in_stage = 0
                 return PolicyDecision(
-                    command=JointPositionCommand(HOME_Q, 1.0),
-                    stage="timeout",
-                    rationale="Gripper failed to close after retries.",
+                    command=JointPositionCommand(observation.joint_position, 0.0),
+                    stage="LIFT",
+                    rationale="Gripper close timeout, proceeding with lift.",
                     target_id=self.target_id,
-                    done=True,
                 )
-            # Try to reposition and retry
-            self.stage = "DESCEND"
-            self.steps_in_stage = 0
+            
             return PolicyDecision(
-                command=JointPositionCommand(observation.joint_position, 1.0),
-                stage="DESCEND",
-                rationale="Gripper not closing, repositioning.",
+                command=JointPositionCommand(observation.joint_position, 0.0),
+                stage="CLOSE",
+                rationale="Waiting for gripper to close.",
                 target_id=self.target_id,
-                request_retry=True,
-                done=False,
             )
 
         # Check if gripper is closed
@@ -578,29 +575,15 @@ class StudentPolicy:
                 target_id=self.target_id,
             )
 
-        # If not closed after max steps, try to continue or retry
+        # If not closed after max steps, proceed anyway
         if self.steps_in_stage > self.max_steps_per_stage:
-            self.retry_count += 1
-            if self.retry_count >= self.max_retries:
-                # Assume closed enough and proceed
-                self.stage = "LIFT"
-                self.steps_in_stage = 0
-                return PolicyDecision(
-                    command=JointPositionCommand(observation.joint_position, 0.0),
-                    stage="LIFT",
-                    rationale="Gripper close timeout, proceeding with lift.",
-                    target_id=self.target_id,
-                )
-            # Retry from descend
-            self.stage = "DESCEND"
+            self.stage = "LIFT"
             self.steps_in_stage = 0
             return PolicyDecision(
-                command=JointPositionCommand(observation.joint_position, 1.0),
-                stage="DESCEND",
-                rationale="Gripper close timeout, retrying.",
+                command=JointPositionCommand(observation.joint_position, 0.0),
+                stage="LIFT",
+                rationale="Gripper close timeout, proceeding with lift.",
                 target_id=self.target_id,
-                request_retry=True,
-                done=False,
             )
 
         return PolicyDecision(

@@ -34,6 +34,14 @@ class SAM3DetectionDebug:
         latency_s: SAM3 inference latency in seconds
         endpoint: SAM3 service endpoint URL
     """
+    target_id: str
+    prompt: str
+    score: float
+    box_xyxy: tuple[float, float, float, float]
+    mask_pixels: int
+    geometry_pixels: int
+    latency_s: float
+    endpoint: str
 
     def as_dict(self) -> dict[str, Any]:
         return {
